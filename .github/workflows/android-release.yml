@@ -35,6 +35,9 @@ jobs:
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
       - name: Read app version
         id: app_version
         shell: bash
@@ -51,13 +54,19 @@ jobs:
           fi
 
       - name: Decode signing keystore
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+          if [ -n "${ANDROID_KEYSTORE_BASE64}" ]; then
+            echo "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+          else
+            echo "No signing keystore configured. Release APK will be built without signing."
+          fi
 
       - name: Build APKs
         env:
-          ANDROID_SIGNING_STORE_FILE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && format('{0}/release.keystore', runner.temp) || '' }}
+          ANDROID_SIGNING_STORE_FILE: ${{ runner.temp }}/release.keystore
           ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
           ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
           ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
@@ -76,22 +85,22 @@ jobs:
         shell: bash
         run: |
           cat > release-notes.md <<EOF
-          ## 哪吒状态监控 / Nezha Monitor Android
+          ## Nezha Monitor Android
 
-          Version: \`${{ steps.app_version.outputs.name }}\`  
-          Version Code: \`${{ steps.app_version.outputs.code }}\`  
+          Version: \`${{ steps.app_version.outputs.name }}\`
+          Version Code: \`${{ steps.app_version.outputs.code }}\`
           Tag: \`${{ github.ref_name }}\`
 
           ### Assets
 
-          - \`app-release.apk\`: release 构建产物
-          - \`app-debug.apk\`: debug 构建产物
+          - \`app-release.apk\`: release build artifact
+          - \`app-debug.apk\`: debug build artifact
 
           ### Notes
 
-          - 如果仓库已配置 Android 签名 Secrets，则 release APK 为签名包
-          - 如果未配置签名 Secrets，则 release APK 为未签名包
-          - 本次自动发布由 GitHub Actions 生成
+          - If Android signing secrets are configured, the release APK will be signed.
+          - If signing secrets are not configured, the release APK may be unsigned.
+          - This release was generated automatically by GitHub Actions.
           EOF
 
       - name: Publish GitHub release
