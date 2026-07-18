@@ -965,16 +965,19 @@ private fun ServerListPane(
     onRetry: () -> Unit,
     strings: AppStrings
 ) {
+    // Hide favorited server from list (already shown in LiveUpdateCard)
     val visibleServers = selectedGroupId
-        ?.let { groupId -> servers.filter { groupId in it.groupIds } }
-        ?: servers
+        ?.let { groupId ->
+            servers.filter { groupId in it.groupIds && it.id != favoriteServerId }
+        }
+        ?: servers.filter { it.id != favoriteServerId }
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         if (selectedGroupId == null) {
             item {
@@ -1193,75 +1196,114 @@ private fun ServerCard(
     strings: AppStrings
 ) {
     Card(
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(modifier = Modifier.padding(18.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            // Header: name + status badge + follow button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = server.name,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = server.platformLine,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Column(horizontalAlignment = Alignment.End) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     StatusBadge(
                         server.isOnline,
                         if (server.isOnline) strings.onlineStatus else strings.offlineStatus
                     )
-                    TextButton(onClick = { onToggleFavorite(server.id) }) {
-                        Text(if (isFavorite) strings.followed else strings.follow)
+                    Column {
+                        Text(
+                            text = server.name,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = server.platformLine,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
+                }
+                TextButton(
+                    onClick = { onToggleFavorite(server.id) },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                ) {
+                    Text(
+                        text = if (isFavorite) strings.followed else strings.follow,
+                        style = MaterialTheme.typography.labelMedium
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Resource gauges in a compact row
             ResourceGrid(
                 cpuPercent = server.cpuPercent,
                 memoryPercent = server.memoryPercent,
                 diskPercent = server.diskPercent
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            SpeedIndicator(
-                downloadSpeed = server.netInSpeed,
-                uploadSpeed = server.netOutSpeed
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Network speed + traffic + connections in one compact section
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SpeedIndicator(
+                    downloadSpeed = server.netInSpeed,
+                    uploadSpeed = server.netOutSpeed
+                )
+                ConnectionRow(
+                    tcp = server.tcpConnCount,
+                    udp = server.udpConnCount,
+                    process = server.processCount
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
             NetworkTrafficRow(
                 netInTransfer = server.netInTransfer,
                 netOutTransfer = server.netOutTransfer
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            ConnectionRow(
-                tcp = server.tcpConnCount,
-                udp = server.udpConnCount,
-                process = server.processCount
-            )
-            server.planLine?.let { InfoLine(strings.plan, it) }
-            server.billingLine?.let { InfoLine(strings.billing, it) }
-            server.ipLine?.let { InfoLine(strings.ip, it) }
-            server.uptimeLine?.let { InfoLine(strings.uptime, it) }
 
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                server.locationTag?.let { TagChip(it) }
-                server.versionTag?.let { TagChip(strings.agentVersion(it)) }
+            // Text info: plan, billing, IP, uptime — only if present
+            val textLines = listOfNotNull(
+                server.planLine?.let { strings.plan to it },
+                server.billingLine?.let { strings.billing to it },
+                server.ipLine?.let { strings.ip to it },
+                server.uptimeLine?.let { strings.uptime to it }
+            )
+            if (textLines.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                textLines.forEach { (label, value) ->
+                    InfoLineCompact(label, value)
+                }
+            }
+
+            // Tags row
+            val tags = listOfNotNull(
+                server.locationTag,
+                server.versionTag?.let { strings.agentVersion(it) }
+            )
+            if (tags.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    tags.forEach { TagChip(it) }
+                }
             }
         }
     }
@@ -1312,16 +1354,36 @@ private fun TagChip(text: String) {
 
 @Composable
 private fun InfoLine(label: String, value: String) {
-    Column(modifier = Modifier.padding(top = 8.dp)) {
+    Column(modifier = Modifier.padding(top = 6.dp)) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary
         )
-        Spacer(modifier = Modifier.height(2.dp))
+        Spacer(modifier = Modifier.height(1.dp))
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+@Composable
+private fun InfoLineCompact(label: String, value: String) {
+    Row(
+        modifier = Modifier.padding(top = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface
         )
     }

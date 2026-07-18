@@ -49,8 +49,8 @@ fun CircularGauge(
     label: String,
     color: Color,
     modifier: Modifier = Modifier,
-    size: Dp = 56.dp,
-    strokeWidth: Dp = 5.dp
+    size: Dp = 42.dp,
+    strokeWidth: Dp = 4.dp
 ) {
     val trackColor = color.copy(alpha = 0.15f)
     val textMeasurer = rememberTextMeasurer()
@@ -209,35 +209,33 @@ fun SpeedIndicator(
     val uploadColor = Color(0xFFE65100)
 
     Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(24.dp)
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Download
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "▼",
                 color = downloadColor,
-                fontSize = 12.sp
+                fontSize = 10.sp
             )
-            Spacer(modifier = Modifier.width(4.dp))
+            Spacer(modifier = Modifier.width(2.dp))
             Text(
                 text = downloadSpeed?.let { "${formatBytes(it)}/s" } ?: "--",
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.labelMedium,
                 color = downloadColor
             )
         }
 
-        // Upload
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "▲",
                 color = uploadColor,
-                fontSize = 12.sp
+                fontSize = 10.sp
             )
-            Spacer(modifier = Modifier.width(4.dp))
+            Spacer(modifier = Modifier.width(2.dp))
             Text(
                 text = uploadSpeed?.let { "${formatBytes(it)}/s" } ?: "--",
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.labelMedium,
                 color = uploadColor
             )
         }
@@ -302,30 +300,30 @@ fun NetworkTrafficRow(
     val uploadColor = Color(0xFFE65100)
 
     Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(24.dp)
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "Total In",
+                text = "IN ",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = netInTransfer?.let { formatBytes(it) } ?: "--",
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.labelSmall,
                 color = downloadColor
             )
         }
-        Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "Total Out",
+                text = "OUT ",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = netOutTransfer?.let { formatBytes(it) } ?: "--",
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.labelSmall,
                 color = uploadColor
             )
         }
@@ -348,12 +346,12 @@ fun ConnectionRow(
     modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         ConnectionBadge(label = "TCP", value = tcp)
         ConnectionBadge(label = "UDP", value = udp)
-        ConnectionBadge(label = "Proc", value = process)
+        ConnectionBadge(label = "P", value = process)
     }
 }
 
@@ -364,18 +362,20 @@ private fun ConnectionBadge(label: String, value: Int?) {
         color = MaterialTheme.colorScheme.secondaryContainer
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
+                fontSize = 9.sp,
                 color = MaterialTheme.colorScheme.onSecondaryContainer
             )
             Text(
                 text = value?.toString() ?: "--",
                 style = MaterialTheme.typography.labelSmall,
+                fontSize = 9.sp,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
             )
