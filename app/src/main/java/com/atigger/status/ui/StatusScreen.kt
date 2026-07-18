@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -55,16 +57,21 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -72,6 +79,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.atigger.status.R
 import com.atigger.status.data.AppLanguage
 import com.atigger.status.data.LiveUpdateMetric
@@ -965,14 +973,35 @@ private fun ServerListPane(
     onRetry: () -> Unit,
     strings: AppStrings
 ) {
+    // Drag-to-reorder state
+    var draggedId by rememberSaveable { mutableStateOf<Int?>(null) }
+    var dragOffsetY by rememberSaveable { mutableStateOf(0f) }
+    var serverOrder by rememberSaveable { mutableStateOf(emptyList<Int>()) }
+
+    // Merge server order with incoming servers
+    LaunchedEffect(servers.map { it.id }) {
+        val currentIds = servers.map { it.id }.toSet()
+        val saved = serverOrder.filter { it in currentIds }
+        val newIds = currentIds.filter { it !in saved }
+        serverOrder = saved + newIds
+    }
+
     // Hide favorited server from list (already shown in LiveUpdateCard)
-    val visibleServers = selectedGroupId
+    val baseServers = selectedGroupId
         ?.let { groupId ->
             servers.filter { groupId in it.groupIds && it.id != favoriteServerId }
         }
         ?: servers.filter { it.id != favoriteServerId }
 
+    // Apply saved order
+    val orderMap = serverOrder.withIndex().associate { (i, id) -> id to i }
+    val visibleServers = baseServers.sortedBy { orderMap[it.id] ?: Int.MAX_VALUE }
+
+    val listState = rememberLazyListState()
+    val itemHeightPx = remember { mutableStateOf(0) }
+
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding),
@@ -1000,17 +1029,17 @@ private fun ServerListPane(
         if (visibleServers.isEmpty()) {
             item {
                 Card(
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer
                     )
                 ) {
-                    Column(modifier = Modifier.padding(18.dp)) {
+                    Column(modifier = Modifier.padding(14.dp)) {
                         Text(
                             text = strings.noNodes,
                             style = MaterialTheme.typography.bodyLarge
                         )
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Button(onClick = onRetry) {
                             Text(strings.reconnect)
                         }
@@ -1028,11 +1057,44 @@ private fun ServerListPane(
                         GroupHeader(group.name)
                     }
                     items(groupServers, key = { "${group.id}-${it.id}" }) { server ->
-                        ServerCard(
+                        DraggableServerCard(
                             server = server,
                             isFavorite = favoriteServerId == server.id,
+                            isDragged = draggedId == server.id,
+                            dragOffsetY = if (draggedId == server.id) dragOffsetY else 0f,
                             onToggleFavorite = onToggleFavorite,
-                            strings = strings
+                            strings = strings,
+                            onDragStart = {
+                                draggedId = server.id
+                                dragOffsetY = 0f
+                            },
+                            onDrag = { delta ->
+                                dragOffsetY += delta
+                            },
+                            onDragEnd = {
+                                val dragged = draggedId ?: return@DraggableServerCard
+                                val itemH = itemHeightPx.value.toFloat().coerceAtLeast(1f)
+                                val steps = (dragOffsetY / (itemH + 8f)).roundToInt() // 8 = spacing
+                                if (steps != 0) {
+                                    val mutableOrder = serverOrder.toMutableList()
+                                    val fromIdx = mutableOrder.indexOf(dragged)
+                                    if (fromIdx >= 0) {
+                                        val toIdx = (fromIdx + steps).coerceIn(0, mutableOrder.lastIndex)
+                                        mutableOrder.removeAt(fromIdx)
+                                        mutableOrder.add(toIdx, dragged)
+                                        serverOrder = mutableOrder
+                                    }
+                                }
+                                draggedId = null
+                                dragOffsetY = 0f
+                            },
+                            onDragCancel = {
+                                draggedId = null
+                                dragOffsetY = 0f
+                            },
+                            onItemHeightMeasured = { h ->
+                                if (h > 0) itemHeightPx.value = h
+                            }
                         )
                     }
                 }
@@ -1044,23 +1106,143 @@ private fun ServerListPane(
                     GroupHeader(strings.ungrouped)
                 }
                 items(ungroupedServers, key = { "ungrouped-${it.id}" }) { server ->
-                    ServerCard(
+                    DraggableServerCard(
                         server = server,
                         isFavorite = favoriteServerId == server.id,
+                        isDragged = draggedId == server.id,
+                        dragOffsetY = if (draggedId == server.id) dragOffsetY else 0f,
                         onToggleFavorite = onToggleFavorite,
-                        strings = strings
+                        strings = strings,
+                        onDragStart = {
+                            draggedId = server.id
+                            dragOffsetY = 0f
+                        },
+                        onDrag = { delta ->
+                            dragOffsetY += delta
+                        },
+                        onDragEnd = {
+                            val dragged = draggedId ?: return@DraggableServerCard
+                            val itemH = itemHeightPx.value.toFloat().coerceAtLeast(1f)
+                            val steps = (dragOffsetY / (itemH + 8f)).roundToInt()
+                            if (steps != 0) {
+                                val mutableOrder = serverOrder.toMutableList()
+                                val fromIdx = mutableOrder.indexOf(dragged)
+                                if (fromIdx >= 0) {
+                                    val toIdx = (fromIdx + steps).coerceIn(0, mutableOrder.lastIndex)
+                                    mutableOrder.removeAt(fromIdx)
+                                    mutableOrder.add(toIdx, dragged)
+                                    serverOrder = mutableOrder
+                                }
+                            }
+                            draggedId = null
+                            dragOffsetY = 0f
+                        },
+                        onDragCancel = {
+                            draggedId = null
+                            dragOffsetY = 0f
+                        },
+                        onItemHeightMeasured = { h ->
+                            if (h > 0) itemHeightPx.value = h
+                        }
                     )
                 }
             }
         } else {
             items(visibleServers, key = { it.id }) { server ->
-                ServerCard(
+                DraggableServerCard(
                     server = server,
                     isFavorite = favoriteServerId == server.id,
+                    isDragged = draggedId == server.id,
+                    dragOffsetY = if (draggedId == server.id) dragOffsetY else 0f,
                     onToggleFavorite = onToggleFavorite,
-                    strings = strings
+                    strings = strings,
+                    onDragStart = {
+                        draggedId = server.id
+                        dragOffsetY = 0f
+                    },
+                    onDrag = { delta ->
+                        dragOffsetY += delta
+                    },
+                    onDragEnd = {
+                        val dragged = draggedId ?: return@DraggableServerCard
+                        val itemH = itemHeightPx.value.toFloat().coerceAtLeast(1f)
+                        val steps = (dragOffsetY / (itemH + 8f)).roundToInt()
+                        if (steps != 0) {
+                            val mutableOrder = serverOrder.toMutableList()
+                            val fromIdx = mutableOrder.indexOf(dragged)
+                            if (fromIdx >= 0) {
+                                val toIdx = (fromIdx + steps).coerceIn(0, mutableOrder.lastIndex)
+                                mutableOrder.removeAt(fromIdx)
+                                mutableOrder.add(toIdx, dragged)
+                                serverOrder = mutableOrder
+                            }
+                        }
+                        draggedId = null
+                        dragOffsetY = 0f
+                    },
+                    onDragCancel = {
+                        draggedId = null
+                        dragOffsetY = 0f
+                    },
+                    onItemHeightMeasured = { h ->
+                        if (h > 0) itemHeightPx.value = h
+                    }
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun DraggableServerCard(
+    server: ServerUiModel,
+    isFavorite: Boolean,
+    isDragged: Boolean,
+    dragOffsetY: Float,
+    onToggleFavorite: (Int) -> Unit,
+    strings: AppStrings,
+    onDragStart: () -> Unit,
+    onDrag: (Float) -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit,
+    onItemHeightMeasured: (Int) -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .offset { IntOffset(0, if (isDragged) dragOffsetY.roundToInt() else 0) }
+            .graphicsLayer {
+                if (isDragged) {
+                    scaleX = 1.03f
+                    scaleY = 1.03f
+                    shadowElevation = 8f
+                    alpha = 0.9f
+                }
+            }
+            .zIndex(if (isDragged) 1f else 0f)
+    ) {
+        Box(
+            modifier = Modifier.onGloballyPositioned { coords ->
+                onItemHeightMeasured(coords.size.height)
+            }
+        ) {
+            ServerCard(
+                server = server,
+                isFavorite = isFavorite,
+                onToggleFavorite = onToggleFavorite,
+                strings = strings,
+                modifier = Modifier
+                    .pointerInput(server.id) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { onDragStart() },
+                            onDrag = { change, offset ->
+                                change.consume()
+                                onDrag(offset.y)
+                            },
+                            onDragEnd = { onDragEnd() },
+                            onDragCancel = { onDragCancel() }
+                        )
+                    }
+            )
         }
     }
 }
@@ -1085,76 +1267,101 @@ private fun LiveUpdateCard(
     strings: AppStrings
 ) {
     Card(
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
         )
     ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Text(
-                text = strings.followedNode,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(6.dp))
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
             if (favoriteServer != null) {
+                // Header row: name + status + unfollow
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = favoriteServer.name,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = strings.updated(lastUpdated),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         StatusBadge(
                             favoriteServer.isOnline,
                             if (favoriteServer.isOnline) strings.onlineStatus else strings.offlineStatus
                         )
-                        TextButton(onClick = { onToggleFavorite(favoriteServer.id) }) {
-                            Text(strings.unfollow)
+                        Column {
+                            Text(
+                                text = favoriteServer.name,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = strings.updated(lastUpdated),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
+                    }
+                    TextButton(
+                        onClick = { onToggleFavorite(favoriteServer.id) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Text(
+                            text = strings.unfollow,
+                            style = MaterialTheme.typography.labelMedium
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(6.dp))
+
                 ResourceGrid(
                     cpuPercent = favoriteServer.cpuPercent,
                     memoryPercent = favoriteServer.memoryPercent,
                     diskPercent = favoriteServer.diskPercent
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                SpeedIndicator(
-                    downloadSpeed = favoriteServer.netInSpeed,
-                    uploadSpeed = favoriteServer.netOutSpeed
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SpeedIndicator(
+                        downloadSpeed = favoriteServer.netInSpeed,
+                        uploadSpeed = favoriteServer.netOutSpeed
+                    )
+                    ConnectionRow(
+                        tcp = favoriteServer.tcpConnCount,
+                        udp = favoriteServer.udpConnCount,
+                        process = favoriteServer.processCount
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
                 NetworkTrafficRow(
                     netInTransfer = favoriteServer.netInTransfer,
                     netOutTransfer = favoriteServer.netOutTransfer
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                ConnectionRow(
-                    tcp = favoriteServer.tcpConnCount,
-                    udp = favoriteServer.udpConnCount,
-                    process = favoriteServer.processCount
+
+                val textLines = listOfNotNull(
+                    favoriteServer.ipLine?.let { strings.ip to it },
+                    favoriteServer.uptimeLine?.let { strings.uptime to it }
                 )
-                favoriteServer.uptimeLine?.let { InfoLine(strings.uptime, it) }
-                favoriteServer.ipLine?.let { InfoLine(strings.ip, it) }
+                if (textLines.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    textLines.forEach { (label, value) ->
+                        InfoLineCompact(label, value)
+                    }
+                }
             } else {
                 Text(
                     text = if (favoriteServerId == null) strings.followHint else strings.followMissingHint,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -1193,7 +1400,8 @@ private fun ServerCard(
     server: ServerUiModel,
     isFavorite: Boolean,
     onToggleFavorite: (Int) -> Unit,
-    strings: AppStrings
+    strings: AppStrings,
+    modifier: Modifier = Modifier
 ) {
     Card(
         shape = RoundedCornerShape(16.dp),
