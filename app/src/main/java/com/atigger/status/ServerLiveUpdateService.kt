@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
-import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.atigger.status.data.FavoriteServerStore
@@ -30,6 +29,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.util.Locale
+import kotlin.math.roundToInt
 
 class ServerLiveUpdateService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -151,51 +151,37 @@ class ServerLiveUpdateService : Service() {
         config: MonitorConfig,
         strings: AppStrings
     ): Notification {
-        val customView = RemoteViews(packageName, R.layout.notification_live_update).apply {
-            // Status dot
-            val dotColor = if (server.isOnline) 0xFF1B8A5A.toInt() else 0xFFB3261E.toInt()
-            setInt(R.id.status_dot, "setBackgroundColor", dotColor)
+        val statusIcon = if (server.isOnline) "🟢" else "🔴"
+        val statusText = if (server.isOnline) strings.onlineStatus else strings.offlineStatus
 
-            // Server name & status
-            setTextViewText(R.id.tv_server_name, server.name)
-            setTextViewText(R.id.tv_status,
-                if (server.isOnline) strings.onlineStatus else strings.offlineStatus)
-            setTextColor(R.id.tv_status, dotColor)
+        val content = "$statusIcon ${server.name}  $statusText"
 
-            // CPU gauge
-            val cpuVal = server.cpuPercent?.toInt()?.coerceIn(0, 100) ?: 0
-            setProgressBar(R.id.pb_cpu, 100, cpuVal, false)
-            setTextViewText(R.id.tv_cpu,
-                server.cpuPercent?.let { "${"%.1f".format(Locale.US, it)}%" } ?: "--")
-
-            // Memory gauge
-            val memVal = server.memoryPercent?.toInt()?.coerceIn(0, 100) ?: 0
-            setProgressBar(R.id.pb_mem, 100, memVal, false)
-            setTextViewText(R.id.tv_mem,
-                server.memoryPercent?.let { "${"%.1f".format(Locale.US, it)}%" } ?: "--")
-
-            // Disk gauge
-            val diskVal = server.diskPercent?.toInt()?.coerceIn(0, 100) ?: 0
-            setProgressBar(R.id.pb_disk, 100, diskVal, false)
-            setTextViewText(R.id.tv_disk,
-                server.diskPercent?.let { "${"%.1f".format(Locale.US, it)}%" } ?: "--")
-
-            // Network speed
-            val dlText = server.netInSpeed?.let { "▼ ${formatBytes(it)}/s" } ?: "▼ --"
-            val ulText = server.netOutSpeed?.let { "▲ ${formatBytes(it)}/s" } ?: "▲ --"
-            setTextViewText(R.id.tv_net_down, dlText)
-            setTextViewText(R.id.tv_net_up, ulText)
-            setTextColor(R.id.tv_net_down, 0xFF1976D2.toInt())
-            setTextColor(R.id.tv_net_up, 0xFFE65100.toInt())
-
-            // Updated time
-            setTextViewText(R.id.tv_updated, strings.updatedAt(lastUpdated))
+        val detail = buildString {
+            // CPU bar
+            append(progressBar(server.cpuPercent, "CPU"))
+            appendLine()
+            // Memory bar
+            append(progressBar(server.memoryPercent, "MEM"))
+            appendLine()
+            // Disk bar
+            append(progressBar(server.diskPercent, "DSK"))
+            appendLine()
+            // Network
+            val dl = server.netInSpeed?.let { "▼${formatBytes(it)}/s" } ?: "▼--"
+            val ul = server.netOutSpeed?.let { "▲${formatBytes(it)}/s" } ?: "▲--"
+            appendLine("$dl  $ul")
+            // Connections
+            val tcp = server.tcpConnCount?.toString() ?: "--"
+            val udp = server.udpConnCount?.toString() ?: "--"
+            appendLine("TCP $tcp  UDP $udp")
+            append(strings.updatedAt(lastUpdated))
         }
 
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setCustomContentView(customView)
-            .setCustomBigContentView(customView)
+            .setContentTitle(content)
+            .setContentText(progressBar(server.cpuPercent, "CPU"))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -203,8 +189,7 @@ class ServerLiveUpdateService : Service() {
             .setDeleteIntent(createStopPendingIntent())
             .addAction(0, strings.unfollow, createStopPendingIntent())
             .setRequestPromotedOngoing(true)
-
-        val notification = builder.build()
+            .build()
 
         if (Build.VERSION.SDK_INT < 36) return notification
 
@@ -212,6 +197,18 @@ class ServerLiveUpdateService : Service() {
         return Notification.Builder.recoverBuilder(this, notification)
             .setShortCriticalText(shortText)
             .build()
+    }
+
+    /**
+     * Builds a text-based progress bar like: CPU ▓▓▓▓▓░░░░░ 45.2%
+     */
+    private fun progressBar(percent: Float?, label: String): String {
+        val p = percent?.coerceIn(0f, 100f)?.toInt() ?: 0
+        val filled = (p / 10.0).roundToInt()  // 0-10 blocks
+        val empty = 10 - filled
+        val bar = "▓".repeat(filled) + "░".repeat(empty)
+        val pct = if (percent != null) "${"%.1f".format(Locale.US, percent)}%" else "--"
+        return "$label $bar $pct"
     }
 
     private fun buildNotification(
