@@ -976,7 +976,7 @@ private fun ServerListPane(
     // Drag-to-reorder state
     var draggedId by rememberSaveable { mutableStateOf<Int?>(null) }
     var dragOffsetY by rememberSaveable { mutableStateOf(0f) }
-    var serverOrder by rememberSaveable { mutableStateOf(emptyList<Int>()) }
+    var serverOrder by remember { mutableStateOf(emptyList<Int>()) }
 
     // Merge server order with incoming servers
     LaunchedEffect(servers.map { it.id }) {
