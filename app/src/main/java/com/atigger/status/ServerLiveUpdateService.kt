@@ -7,7 +7,6 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
 import android.widget.RemoteViews
@@ -153,13 +152,9 @@ class ServerLiveUpdateService : Service() {
         strings: AppStrings
     ): Notification {
         val customView = RemoteViews(packageName, R.layout.notification_live_update).apply {
-            // Status dot color
+            // Status dot
             val dotColor = if (server.isOnline) 0xFF1B8A5A.toInt() else 0xFFB3261E.toInt()
-            val dot = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(dotColor)
-            }
-            setImageViewBitmap(R.id.status_dot, drawableToBitmap(dot))
+            setInt(R.id.status_dot, "setBackgroundColor", dotColor)
 
             // Server name & status
             setTextViewText(R.id.tv_server_name, server.name)
@@ -168,19 +163,19 @@ class ServerLiveUpdateService : Service() {
             setTextColor(R.id.tv_status, dotColor)
 
             // CPU gauge
-            val cpuVal = server.cpuPercent?.toInt() ?: 0
+            val cpuVal = server.cpuPercent?.toInt()?.coerceIn(0, 100) ?: 0
             setProgressBar(R.id.pb_cpu, 100, cpuVal, false)
             setTextViewText(R.id.tv_cpu,
                 server.cpuPercent?.let { "${"%.1f".format(Locale.US, it)}%" } ?: "--")
 
             // Memory gauge
-            val memVal = server.memoryPercent?.toInt() ?: 0
+            val memVal = server.memoryPercent?.toInt()?.coerceIn(0, 100) ?: 0
             setProgressBar(R.id.pb_mem, 100, memVal, false)
             setTextViewText(R.id.tv_mem,
                 server.memoryPercent?.let { "${"%.1f".format(Locale.US, it)}%" } ?: "--")
 
             // Disk gauge
-            val diskVal = server.diskPercent?.toInt() ?: 0
+            val diskVal = server.diskPercent?.toInt()?.coerceIn(0, 100) ?: 0
             setProgressBar(R.id.pb_disk, 100, diskVal, false)
             setTextViewText(R.id.tv_disk,
                 server.diskPercent?.let { "${"%.1f".format(Locale.US, it)}%" } ?: "--")
@@ -197,9 +192,8 @@ class ServerLiveUpdateService : Service() {
             setTextViewText(R.id.tv_updated, strings.updatedAt(lastUpdated))
         }
 
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
             .setCustomContentView(customView)
             .setCustomBigContentView(customView)
             .setOngoing(true)
@@ -209,7 +203,8 @@ class ServerLiveUpdateService : Service() {
             .setDeleteIntent(createStopPendingIntent())
             .addAction(0, strings.unfollow, createStopPendingIntent())
             .setRequestPromotedOngoing(true)
-            .build()
+
+        val notification = builder.build()
 
         if (Build.VERSION.SDK_INT < 36) return notification
 
@@ -217,15 +212,6 @@ class ServerLiveUpdateService : Service() {
         return Notification.Builder.recoverBuilder(this, notification)
             .setShortCriticalText(shortText)
             .build()
-    }
-
-    private fun drawableToBitmap(drawable: GradientDrawable): android.graphics.Bitmap {
-        val size = (8 * resources.displayMetrics.density).toInt()
-        val bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
-        val canvas = android.graphics.Canvas(bitmap)
-        drawable.setBounds(0, 0, size, size)
-        drawable.draw(canvas)
-        return bitmap
     }
 
     private fun buildNotification(
