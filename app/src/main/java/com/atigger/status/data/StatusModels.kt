@@ -175,7 +175,23 @@ data class ServerUiModel(
     val ipLine: String?,
     val uptimeLine: String?,
     val locationTag: String?,
-    val versionTag: String?
+    val versionTag: String?,
+    // Raw values for graphical display
+    val cpuPercent: Float?,           // 0-100
+    val memoryPercent: Float?,        // 0-100
+    val memoryUsedBytes: Long?,
+    val memoryTotalBytes: Long?,
+    val diskPercent: Float?,          // 0-100
+    val diskUsedBytes: Long?,
+    val diskTotalBytes: Long?,
+    val swapPercent: Float?,          // 0-100
+    val netInSpeed: Long?,            // bytes/s
+    val netOutSpeed: Long?,           // bytes/s
+    val netInTransfer: Long?,         // total bytes
+    val netOutTransfer: Long?,        // total bytes
+    val tcpConnCount: Int?,
+    val udpConnCount: Int?,
+    val processCount: Int?
 )
 
 data class ServerGroupUiModel(
@@ -247,6 +263,11 @@ fun ServerDto.toUiModel(
     val ips = listOfNotNull(geoip.ip.ipv4Addr, geoip.ip.ipv6Addr)
     val ipLine = ips.takeIf { it.isNotEmpty() }?.joinToString("  ")
 
+    // Compute raw percentage values
+    val memoryPercent = computePercent(state.memUsed, host.memTotal)
+    val diskPercent = computePercent(state.diskUsed, host.diskTotal)
+    val swapPercent = computePercent(state.swapUsed, host.swapTotal)
+
     return ServerUiModel(
         id = id,
         name = name,
@@ -271,7 +292,23 @@ fun ServerDto.toUiModel(
         locationTag = note.customData?.location
             ?: countryCode?.uppercase(Locale.getDefault())
             ?: geoip.countryCode?.uppercase(Locale.getDefault()),
-        versionTag = host.version
+        versionTag = host.version,
+        // Raw values for graphical display
+        cpuPercent = state.cpu?.toFloat(),
+        memoryPercent = memoryPercent,
+        memoryUsedBytes = state.memUsed,
+        memoryTotalBytes = host.memTotal,
+        diskPercent = diskPercent,
+        diskUsedBytes = state.diskUsed,
+        diskTotalBytes = host.diskTotal,
+        swapPercent = swapPercent,
+        netInSpeed = state.netInSpeed,
+        netOutSpeed = state.netOutSpeed,
+        netInTransfer = state.netInTransfer,
+        netOutTransfer = state.netOutTransfer,
+        tcpConnCount = state.tcpConnCount,
+        udpConnCount = state.udpConnCount,
+        processCount = state.processCount
     )
 }
 
@@ -335,7 +372,12 @@ private fun formatUsagePercent(used: Long?, total: Long?): String? {
     return "${formatPercent(percent)}%"
 }
 
-private fun formatBytes(value: Long): String {
+private fun computePercent(used: Long?, total: Long?): Float? {
+    if (used == null || total == null || total <= 0) return null
+    return (used.toDouble() / total.toDouble() * 100.0).toFloat()
+}
+
+internal fun formatBytes(value: Long): String {
     val units = listOf("B", "KB", "MB", "GB", "TB", "PB")
     var display = value.toDouble().absoluteValue
     var unitIndex = 0

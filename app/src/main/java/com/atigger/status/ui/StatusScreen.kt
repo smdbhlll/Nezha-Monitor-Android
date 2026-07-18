@@ -1125,10 +1125,27 @@ private fun LiveUpdateCard(
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
-                InfoLine(strings.cpu, favoriteServer.cpuLine)
-                InfoLine(strings.usage, favoriteServer.usageLine)
-                InfoLine(strings.network, favoriteServer.networkLine)
-                InfoLine(strings.traffic, favoriteServer.trafficLine)
+                ResourceGrid(
+                    cpuPercent = favoriteServer.cpuPercent,
+                    memoryPercent = favoriteServer.memoryPercent,
+                    diskPercent = favoriteServer.diskPercent
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                SpeedIndicator(
+                    downloadSpeed = favoriteServer.netInSpeed,
+                    uploadSpeed = favoriteServer.netOutSpeed
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                NetworkTrafficRow(
+                    netInTransfer = favoriteServer.netInTransfer,
+                    netOutTransfer = favoriteServer.netOutTransfer
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                ConnectionRow(
+                    tcp = favoriteServer.tcpConnCount,
+                    udp = favoriteServer.udpConnCount,
+                    process = favoriteServer.processCount
+                )
                 favoriteServer.uptimeLine?.let { InfoLine(strings.uptime, it) }
                 favoriteServer.ipLine?.let { InfoLine(strings.ip, it) }
             } else {
@@ -1215,11 +1232,27 @@ private fun ServerCard(
             }
 
             Spacer(modifier = Modifier.height(14.dp))
-            InfoLine(strings.cpu, server.cpuLine)
-            InfoLine(strings.usage, server.usageLine)
-            InfoLine(strings.network, server.networkLine)
-            InfoLine(strings.traffic, server.trafficLine)
-            InfoLine(strings.connectionLabel, server.connectionLine)
+            ResourceGrid(
+                cpuPercent = server.cpuPercent,
+                memoryPercent = server.memoryPercent,
+                diskPercent = server.diskPercent
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            SpeedIndicator(
+                downloadSpeed = server.netInSpeed,
+                uploadSpeed = server.netOutSpeed
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            NetworkTrafficRow(
+                netInTransfer = server.netInTransfer,
+                netOutTransfer = server.netOutTransfer
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            ConnectionRow(
+                tcp = server.tcpConnCount,
+                udp = server.udpConnCount,
+                process = server.processCount
+            )
             server.planLine?.let { InfoLine(strings.plan, it) }
             server.billingLine?.let { InfoLine(strings.billing, it) }
             server.ipLine?.let { InfoLine(strings.ip, it) }
