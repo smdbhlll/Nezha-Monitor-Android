@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -26,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,13 +57,11 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,7 +69,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -79,7 +76,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import com.atigger.status.R
 import com.atigger.status.data.AppLanguage
 import com.atigger.status.data.LiveUpdateMetric
@@ -974,12 +970,12 @@ private fun ServerListPane(
     strings: AppStrings
 ) {
     // Drag-to-reorder state
-    var draggedId by rememberSaveable { mutableStateOf<Int?>(null) }
-    var dragOffsetY by rememberSaveable { mutableStateOf(0f) }
+    var draggedId by remember { mutableStateOf<Int?>(null) }
+    var dragOffsetY by remember { mutableStateOf(0f) }
     var serverOrder by remember { mutableStateOf(emptyList<Int>()) }
 
     // Merge server order with incoming servers
-    LaunchedEffect(servers.map { it.id }) {
+    LaunchedEffect(servers.size) {
         val currentIds = servers.map { it.id }.toSet()
         val saved = serverOrder.filter { it in currentIds }
         val newIds = currentIds.filter { it !in saved }
@@ -998,7 +994,6 @@ private fun ServerListPane(
     val visibleServers = baseServers.sortedBy { orderMap[it.id] ?: Int.MAX_VALUE }
 
     val listState = rememberLazyListState()
-    val itemHeightPx = remember { mutableStateOf(0) }
 
     LazyColumn(
         state = listState,
@@ -1068,21 +1063,20 @@ private fun ServerListPane(
                                 draggedId = server.id
                                 dragOffsetY = 0f
                             },
-                            onDrag = { delta ->
-                                dragOffsetY += delta
-                            },
+                            onDrag = { delta -> dragOffsetY += delta },
                             onDragEnd = {
-                                val dragged = draggedId ?: return@DraggableServerCard
-                                val itemH = itemHeightPx.value.toFloat().coerceAtLeast(1f)
-                                val steps = (dragOffsetY / (itemH + 8f)).roundToInt() // 8 = spacing
-                                if (steps != 0) {
-                                    val mutableOrder = serverOrder.toMutableList()
-                                    val fromIdx = mutableOrder.indexOf(dragged)
-                                    if (fromIdx >= 0) {
-                                        val toIdx = (fromIdx + steps).coerceIn(0, mutableOrder.lastIndex)
-                                        mutableOrder.removeAt(fromIdx)
-                                        mutableOrder.add(toIdx, dragged)
-                                        serverOrder = mutableOrder
+                                val dragged = draggedId
+                                if (dragged != null) {
+                                    val steps = (dragOffsetY / 300f).roundToInt()
+                                    if (steps != 0) {
+                                        val mutableOrder = serverOrder.toMutableList()
+                                        val fromIdx = mutableOrder.indexOf(dragged)
+                                        if (fromIdx >= 0) {
+                                            val toIdx = (fromIdx + steps).coerceIn(0, mutableOrder.lastIndex)
+                                            mutableOrder.removeAt(fromIdx)
+                                            mutableOrder.add(toIdx, dragged)
+                                            serverOrder = mutableOrder
+                                        }
                                     }
                                 }
                                 draggedId = null
@@ -1091,9 +1085,6 @@ private fun ServerListPane(
                             onDragCancel = {
                                 draggedId = null
                                 dragOffsetY = 0f
-                            },
-                            onItemHeightMeasured = { h ->
-                                if (h > 0) itemHeightPx.value = h
                             }
                         )
                     }
@@ -1117,21 +1108,20 @@ private fun ServerListPane(
                             draggedId = server.id
                             dragOffsetY = 0f
                         },
-                        onDrag = { delta ->
-                            dragOffsetY += delta
-                        },
+                        onDrag = { delta -> dragOffsetY += delta },
                         onDragEnd = {
-                            val dragged = draggedId ?: return@DraggableServerCard
-                            val itemH = itemHeightPx.value.toFloat().coerceAtLeast(1f)
-                            val steps = (dragOffsetY / (itemH + 8f)).roundToInt()
-                            if (steps != 0) {
-                                val mutableOrder = serverOrder.toMutableList()
-                                val fromIdx = mutableOrder.indexOf(dragged)
-                                if (fromIdx >= 0) {
-                                    val toIdx = (fromIdx + steps).coerceIn(0, mutableOrder.lastIndex)
-                                    mutableOrder.removeAt(fromIdx)
-                                    mutableOrder.add(toIdx, dragged)
-                                    serverOrder = mutableOrder
+                            val dragged = draggedId
+                            if (dragged != null) {
+                                val steps = (dragOffsetY / 300f).roundToInt()
+                                if (steps != 0) {
+                                    val mutableOrder = serverOrder.toMutableList()
+                                    val fromIdx = mutableOrder.indexOf(dragged)
+                                    if (fromIdx >= 0) {
+                                        val toIdx = (fromIdx + steps).coerceIn(0, mutableOrder.lastIndex)
+                                        mutableOrder.removeAt(fromIdx)
+                                        mutableOrder.add(toIdx, dragged)
+                                        serverOrder = mutableOrder
+                                    }
                                 }
                             }
                             draggedId = null
@@ -1140,9 +1130,6 @@ private fun ServerListPane(
                         onDragCancel = {
                             draggedId = null
                             dragOffsetY = 0f
-                        },
-                        onItemHeightMeasured = { h ->
-                            if (h > 0) itemHeightPx.value = h
                         }
                     )
                 }
@@ -1160,21 +1147,20 @@ private fun ServerListPane(
                         draggedId = server.id
                         dragOffsetY = 0f
                     },
-                    onDrag = { delta ->
-                        dragOffsetY += delta
-                    },
+                    onDrag = { delta -> dragOffsetY += delta },
                     onDragEnd = {
-                        val dragged = draggedId ?: return@DraggableServerCard
-                        val itemH = itemHeightPx.value.toFloat().coerceAtLeast(1f)
-                        val steps = (dragOffsetY / (itemH + 8f)).roundToInt()
-                        if (steps != 0) {
-                            val mutableOrder = serverOrder.toMutableList()
-                            val fromIdx = mutableOrder.indexOf(dragged)
-                            if (fromIdx >= 0) {
-                                val toIdx = (fromIdx + steps).coerceIn(0, mutableOrder.lastIndex)
-                                mutableOrder.removeAt(fromIdx)
-                                mutableOrder.add(toIdx, dragged)
-                                serverOrder = mutableOrder
+                        val dragged = draggedId
+                        if (dragged != null) {
+                            val steps = (dragOffsetY / 300f).roundToInt()
+                            if (steps != 0) {
+                                val mutableOrder = serverOrder.toMutableList()
+                                val fromIdx = mutableOrder.indexOf(dragged)
+                                if (fromIdx >= 0) {
+                                    val toIdx = (fromIdx + steps).coerceIn(0, mutableOrder.lastIndex)
+                                    mutableOrder.removeAt(fromIdx)
+                                    mutableOrder.add(toIdx, dragged)
+                                    serverOrder = mutableOrder
+                                }
                             }
                         }
                         draggedId = null
@@ -1183,9 +1169,6 @@ private fun ServerListPane(
                     onDragCancel = {
                         draggedId = null
                         dragOffsetY = 0f
-                    },
-                    onItemHeightMeasured = { h ->
-                        if (h > 0) itemHeightPx.value = h
                     }
                 )
             }
@@ -1204,46 +1187,44 @@ private fun DraggableServerCard(
     onDragStart: () -> Unit,
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
-    onDragCancel: () -> Unit,
-    onItemHeightMeasured: (Int) -> Unit
+    onDragCancel: () -> Unit
 ) {
-    Box(
+    val elevation = if (isDragged) 8.dp else 0.dp
+    val scale = if (isDragged) 1.02f else 1f
+
+    Card(
         modifier = Modifier
             .offset { IntOffset(0, if (isDragged) dragOffsetY.roundToInt() else 0) }
             .graphicsLayer {
-                if (isDragged) {
-                    scaleX = 1.03f
-                    scaleY = 1.03f
-                    shadowElevation = 8f
-                    alpha = 0.9f
-                }
-            }
-            .zIndex(if (isDragged) 1f else 0f)
+                scaleX = scale
+                scaleY = scale
+            },
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = elevation),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDragged)
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            else
+                MaterialTheme.colorScheme.surfaceContainerHigh
+        )
     ) {
-        Box(
-            modifier = Modifier.onGloballyPositioned { coords ->
-                onItemHeightMeasured(coords.size.height)
+        ServerCard(
+            server = server,
+            isFavorite = isFavorite,
+            onToggleFavorite = onToggleFavorite,
+            strings = strings,
+            modifier = Modifier.pointerInput(server.id) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { onDragStart() },
+                    onDrag = { change, offset ->
+                        change.consume()
+                        onDrag(offset.y)
+                    },
+                    onDragEnd = { onDragEnd() },
+                    onDragCancel = { onDragCancel() }
+                )
             }
-        ) {
-            ServerCard(
-                server = server,
-                isFavorite = isFavorite,
-                onToggleFavorite = onToggleFavorite,
-                strings = strings,
-                modifier = Modifier
-                    .pointerInput(server.id) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = { onDragStart() },
-                            onDrag = { change, offset ->
-                                change.consume()
-                                onDrag(offset.y)
-                            },
-                            onDragEnd = { onDragEnd() },
-                            onDragCancel = { onDragCancel() }
-                        )
-                    }
-            )
-        }
+        )
     }
 }
 
