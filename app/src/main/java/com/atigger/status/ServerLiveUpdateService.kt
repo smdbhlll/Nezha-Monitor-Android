@@ -7,8 +7,10 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.atigger.status.data.FavoriteServerStore
@@ -18,6 +20,7 @@ import com.atigger.status.data.ServerUiModel
 import com.atigger.status.data.StatusRepository
 import com.atigger.status.data.StatusStreamEvent
 import com.atigger.status.data.criticalStatusText
+import com.atigger.status.data.formatBytes
 import com.atigger.status.i18n.AppStrings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +30,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 class ServerLiveUpdateService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -147,17 +151,82 @@ class ServerLiveUpdateService : Service() {
         lastUpdated: String,
         config: MonitorConfig,
         strings: AppStrings
-    ) = buildNotification(
-            title = server.name,
-            content = server.criticalStatusText(config.liveUpdateMetric, strings),
-            detail = buildString {
-                appendLine(server.usageLine)
-                appendLine(server.networkLine)
-                append(strings.updatedAt(lastUpdated))
-            },
-            actionText = strings.unfollow,
-            shortCriticalText = server.criticalStatusText(config.liveUpdateMetric, strings)
-        )
+    ): Notification {
+        val customView = RemoteViews(packageName, R.layout.notification_live_update).apply {
+            // Status dot color
+            val dotColor = if (server.isOnline) 0xFF1B8A5A.toInt() else 0xFFB3261E.toInt()
+            val dot = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(dotColor)
+            }
+            setImageViewBitmap(R.id.status_dot, drawableToBitmap(dot))
+
+            // Server name & status
+            setTextViewText(R.id.tv_server_name, server.name)
+            setTextViewText(R.id.tv_status,
+                if (server.isOnline) strings.onlineStatus else strings.offlineStatus)
+            setTextColor(R.id.tv_status, dotColor)
+
+            // CPU gauge
+            val cpuVal = server.cpuPercent?.toInt() ?: 0
+            setProgressBar(R.id.pb_cpu, 100, cpuVal, false)
+            setTextViewText(R.id.tv_cpu,
+                server.cpuPercent?.let { "${"%.1f".format(Locale.US, it)}%" } ?: "--")
+
+            // Memory gauge
+            val memVal = server.memoryPercent?.toInt() ?: 0
+            setProgressBar(R.id.pb_mem, 100, memVal, false)
+            setTextViewText(R.id.tv_mem,
+                server.memoryPercent?.let { "${"%.1f".format(Locale.US, it)}%" } ?: "--")
+
+            // Disk gauge
+            val diskVal = server.diskPercent?.toInt() ?: 0
+            setProgressBar(R.id.pb_disk, 100, diskVal, false)
+            setTextViewText(R.id.tv_disk,
+                server.diskPercent?.let { "${"%.1f".format(Locale.US, it)}%" } ?: "--")
+
+            // Network speed
+            val dlText = server.netInSpeed?.let { "▼ ${formatBytes(it)}/s" } ?: "▼ --"
+            val ulText = server.netOutSpeed?.let { "▲ ${formatBytes(it)}/s" } ?: "▲ --"
+            setTextViewText(R.id.tv_net_down, dlText)
+            setTextViewText(R.id.tv_net_up, ulText)
+            setTextColor(R.id.tv_net_down, 0xFF1976D2.toInt())
+            setTextColor(R.id.tv_net_up, 0xFFE65100.toInt())
+
+            // Updated time
+            setTextViewText(R.id.tv_updated, strings.updatedAt(lastUpdated))
+        }
+
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            .setCustomContentView(customView)
+            .setCustomBigContentView(customView)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setContentIntent(createOpenAppPendingIntent())
+            .setDeleteIntent(createStopPendingIntent())
+            .addAction(0, strings.unfollow, createStopPendingIntent())
+            .setRequestPromotedOngoing(true)
+            .build()
+
+        if (Build.VERSION.SDK_INT < 36) return notification
+
+        val shortText = server.criticalStatusText(config.liveUpdateMetric, strings)
+        return Notification.Builder.recoverBuilder(this, notification)
+            .setShortCriticalText(shortText)
+            .build()
+    }
+
+    private fun drawableToBitmap(drawable: GradientDrawable): android.graphics.Bitmap {
+        val size = (8 * resources.displayMetrics.density).toInt()
+        val bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        drawable.setBounds(0, 0, size, size)
+        drawable.draw(canvas)
+        return bitmap
+    }
 
     private fun buildNotification(
         title: String,
